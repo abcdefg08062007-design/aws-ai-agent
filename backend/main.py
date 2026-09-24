@@ -6,25 +6,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from agent import run_agent
-from aws_auth import AWS_SESSIONS, connect_aws
-from database import Base, engine, get_db
-from models import ChatMessage
-from schemas import (
+from backend.agent import run_agent
+from backend.aws_auth import AWS_SESSIONS, connect_aws
+from backend.database import Base, engine, get_db
+from backend.models import ChatMessage
+from backend.schemas import (
     AWSConnectRequest,
     AWSConnectResponse,
     ChatRequest,
     ChatResponse,
 )
 
-from action_schemas import (
+from backend.action_schemas import (
     AWSActionRequest,
     AWSActionApprovalRequest,
     RCARecommendedActionBatch,
     RCABatchApprovalRequest,
 )
 
-from action_store import (
+from backend.action_store import (
     create_pending_action,
     get_pending_action,
     approve_pending_action,
@@ -36,9 +36,9 @@ from action_store import (
     update_batch_action_status,
 )
 
-from action_validation import validate_action
-from aws_action_executor import execute_aws_action
-from aws_tools import (
+from backend.action_validation import validate_action
+from backend.aws_action_executor import execute_aws_action
+from backend.aws_tools import (
     get_ec2_instances,
     get_s3_buckets,
     get_rds_instances,
@@ -1041,7 +1041,7 @@ from fastapi import Body, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from aws_auth import get_aws_client
+from backend.aws_auth import get_aws_client
 
 
 class S3UploadRequest(BaseModel):

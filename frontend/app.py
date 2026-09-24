@@ -714,6 +714,7 @@ def render_resource_fields(action_type, resource_type):
 
     elif resource_type == "ec2_instance":
         if action_type == "create":
+            text_field("Resource name", "resource_name", placeholder="MyEC2Server")
             text_field("AMI / Image ID", "ami_id", placeholder="ami-xxxxxxxx")
             text_field("Instance type", "instance_type", placeholder="t3.micro")
             number_field("Minimum count", "min_count", 1)
@@ -784,6 +785,7 @@ def render_resource_fields(action_type, resource_type):
 
     elif resource_type == "vpc":
         if action_type == "create":
+            text_field("VPC name", "resource_name", placeholder="MyProductionVPC")
             text_field("CIDR block", "cidr_block", placeholder="10.0.0.0/16")
         else:
             text_field("VPC ID", "vpc_id")
@@ -791,6 +793,7 @@ def render_resource_fields(action_type, resource_type):
 
     elif resource_type == "subnet":
         if action_type == "create":
+            text_field("Subnet name", "resource_name", placeholder="MyPublicSubnet")
             text_field("VPC ID", "vpc_id")
             text_field("CIDR block", "cidr_block", placeholder="10.0.1.0/24")
             text_field("Availability zone", "availability_zone")
@@ -819,6 +822,25 @@ def render_resource_fields(action_type, resource_type):
             text_field("Delete confirmation", "delete_confirmation")
 
     return parameters
+
+
+def get_action_reason(action: str, resource_label: str, resource_name: str = "") -> str:
+    """Return a resource-specific default reason for auditability."""
+    reasons = {
+        "S3 Bucket": {"create": "Create an S3 bucket for storing application files and objects."},
+        "EC2 Instance": {"create": "Create an EC2 instance to host an application workload."},
+        "RDS Instance": {"create": "Create an RDS database for application data storage."},
+        "Lambda Function": {"create": "Create a Lambda function for serverless application processing."},
+        "Security Group": {"create": "Create a security group to control network traffic."},
+        "VPC": {"create": "Create a VPC to provide an isolated AWS network environment."},
+        "Subnet": {"create": "Create a subnet within the selected VPC for resource deployment."},
+        "IAM Resource": {"create": "Create an IAM resource to manage AWS permissions and access."},
+    }
+    reason = reasons.get(resource_label, {}).get(action.lower(), f"{action.title()} the selected {resource_label}.")
+    if resource_name:
+        reason = f"{reason.rstrip('.')} Target resource: {resource_name}."
+    return reason
+
 
 
 def display_single_action_manager():
@@ -874,10 +896,16 @@ def display_single_action_manager():
             st.markdown("### Resource configuration")
             with st.form("dynamic_resource_action_form", clear_on_submit=False):
                 parameters = render_resource_fields(action_type, resource_type)
+                resource_name_for_reason = parameters.get("resource_name", "")
+                default_reason = get_action_reason(
+                    action_type,
+                    resource_label,
+                    resource_name_for_reason,
+                )
                 explanation = st.text_area(
                     "Reason for this action",
-                    value=f"User requested {action_type} for {resource_label}.",
-                    key="resource_explanation",
+                    value=default_reason,
+                    key=f"resource_explanation_{resource_type}",
                     help="Explain why this operation is required for auditability.",
                 )
 

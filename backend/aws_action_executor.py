@@ -21,7 +21,7 @@ import base64
 import json
 import re
 
-from aws_auth import get_aws_client
+from backend.aws_auth import get_aws_client
 
 
 SUPPORTED_ACTIONS = {
@@ -42,7 +42,6 @@ SUPPORTED_ACTIONS = {
     "disable": {"lambda_function"},
     "delete": {
         "s3_bucket",
-        "s3_object",
         "ec2_instance",
         "rds_instance",
         "lambda_function",
@@ -84,7 +83,6 @@ def execute_aws_action(
 
     executors = {
         "s3_bucket": execute_s3,
-        "s3_object": execute_s3_object,
         "ec2_instance": execute_ec2,
         "rds_instance": execute_rds,
         "lambda_function": execute_lambda,
@@ -204,7 +202,17 @@ def execute_s3(
 
     if action == "create":
 
-        region = get_region(parameters)
+        # Prefer an explicitly supplied region, but otherwise use the
+        # region configured on the AWS client/session. This is important
+        # for regional S3 endpoints such as ap-south-2.
+        region = parameters.get("region")
+        if not isinstance(region, str) or not region.strip():
+            region = getattr(client.meta, "region_name", None)
+
+        if not isinstance(region, str) or not region.strip():
+            region = "us-east-1"
+
+        region = region.strip()
 
         if region == "us-east-1":
             response = client.create_bucket(
@@ -253,64 +261,6 @@ def execute_s3(
 
 
 # =====================================================
-# 1B. S3 OBJECT
-# =====================================================
-
-
-def execute_s3_object(
-    session_id: str,
-    action: str,
-    parameters: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Delete one object from an S3 bucket."""
-
-    if action != "delete":
-        raise ValueError(
-            f"Unsupported S3 object action: {action}"
-        )
-
-    client = get_aws_client(
-        session_id=session_id,
-        service_name="s3",
-    )
-
-    bucket_name = validate_identifier(
-        require_string(parameters, "bucket_name"),
-        "bucket_name",
-    )
-
-    object_key = require_string(
-        parameters,
-        "object_key",
-    )
-
-    if len(object_key) > 1024:
-        raise ValueError("object_key is too long")
-
-    confirmation_identifier = f"{bucket_name}/{object_key}"
-
-    require_delete_confirmation(
-        parameters,
-        confirmation_identifier,
-    )
-
-    client.delete_object(
-        Bucket=bucket_name,
-        Key=object_key,
-    )
-
-    return {
-        "success": True,
-        "service": "s3",
-        "resource_type": "s3_object",
-        "action": "delete",
-        "bucket_name": bucket_name,
-        "object_key": object_key,
-        "message": "S3 object deletion request completed successfully",
-    }
-
-
-# =====================================================
 # 2. EC2
 # =====================================================
 
@@ -343,12 +293,28 @@ def execute_ec2(
             "key_name",
         )
 
+        resource_name = require_string(
+            parameters,
+            "resource_name",
+        )
+
         request = {
             "ImageId": ami_id,
             "InstanceType": instance_type,
             "KeyName": key_name,
             "MinCount": 1,
             "MaxCount": 1,
+            "TagSpecifications": [
+                {
+                    "ResourceType": "instance",
+                    "Tags": [
+                        {
+                            "Key": "Name",
+                            "Value": resource_name,
+                        }
+                    ],
+                }
+            ],
         }
 
         subnet_id = parameters.get("subnet_id")
@@ -856,8 +822,24 @@ def execute_vpc(
             "cidr_block",
         )
 
+        resource_name = require_string(
+            parameters,
+            "resource_name",
+        )
+
         response = client.create_vpc(
             CidrBlock=cidr_block,
+            TagSpecifications=[
+                {
+                    "ResourceType": "vpc",
+                    "Tags": [
+                        {
+                            "Key": "Name",
+                            "Value": resource_name,
+                        }
+                    ],
+                }
+            ],
         )
 
         vpc = response.get(
@@ -871,6 +853,7 @@ def execute_vpc(
             "action": "create",
             "vpc_id": vpc.get("VpcId"),
             "cidr_block": cidr_block,
+            "resource_name": resource_name,
         }
 
     if action == "delete":
@@ -934,10 +917,26 @@ def execute_subnet(
             "availability_zone",
         )
 
+        resource_name = require_string(
+            parameters,
+            "resource_name",
+        )
+
         response = client.create_subnet(
             VpcId=vpc_id,
             CidrBlock=cidr_block,
             AvailabilityZone=availability_zone,
+            TagSpecifications=[
+                {
+                    "ResourceType": "subnet",
+                    "Tags": [
+                        {
+                            "Key": "Name",
+                            "Value": resource_name,
+                        }
+                    ],
+                }
+            ],
         )
 
         subnet = response.get(
@@ -953,6 +952,7 @@ def execute_subnet(
                 "SubnetId"
             ),
             "vpc_id": vpc_id,
+            "resource_name": resource_name,
         }
 
     if action == "delete":
